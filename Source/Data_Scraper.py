@@ -154,6 +154,7 @@ class DataScraper:
             2. Remove elements with known non-content CSS classes
             3. Locate the main content container (main/article/content)
             4. Extract text and filter out JS artefacts and blank lines
+            5. Normalize text by replacing special characters
 
         Returns:
             str: Cleaned text content with one logical line per output line.
@@ -184,7 +185,18 @@ class DataScraper:
             line for line in lines
             if line.strip() not in Constants.JS_ARTEFACTS
         ]
-        return "\n".join(filtered_lines)
+        
+        # Normalize text by cleaning special characters and controlling whitespace
+        normalized_lines = []
+        for line in filtered_lines:
+            # Remove special characters that shouldn't be in plain text
+            cleaned_line = line.replace('\xa0', ' ').replace('&nbsp;', ' ')
+            # Normalize multiple spaces to single space
+            cleaned_line = ' '.join(cleaned_line.split())
+            # Only keep lines with alphanumeric content (or reasonable special chars)
+            if any(c.isalnum() for c in cleaned_line) and cleaned_line.strip():
+                normalized_lines.append(cleaned_line)
+        return "\n".join(normalized_lines)
 
     def _url_to_filepath(self, url):
         """

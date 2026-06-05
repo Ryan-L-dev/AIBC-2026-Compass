@@ -54,7 +54,7 @@ def main():
     #data_preprocessing()
     #chat_interface()
     vdb = VectorDatabase()
-    output = vdb.query("Please explain what is CPF LIFE and how it works?")
+    output = vdb.query("How do I use CPF for housing?")
     [print(i) for i in output]
     pass
 
