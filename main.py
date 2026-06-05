@@ -14,8 +14,7 @@ from Source.Data_Scraper import DataScraper
 from Source.Vector_Database import VectorDatabase
 from Source.Chat_Engine import ChatEngine
 
-
-def main():
+def data_preprocessing():
     # Step 1 — Scrape website content
     scraper = DataScraper()
     scraper.process()
@@ -24,6 +23,7 @@ def main():
     vdb = VectorDatabase()
     vdb.process()
 
+def chat_interface(vdb):
     # Step 3 — Chat (placeholder interactive loop)
     chat = ChatEngine(vdb)
 
@@ -50,6 +50,13 @@ def main():
             for url in result["sources"]:
                 print(f"    - {url}")
 
+def main():
+    #data_preprocessing()
+    #chat_interface()
+    vdb = VectorDatabase()
+    output = vdb.query("Please explain what is CPF LIFE and how it works?")
+    [print(i) for i in output]
+    pass
 
 if __name__ == "__main__":
     main()
