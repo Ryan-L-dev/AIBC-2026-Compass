@@ -200,6 +200,12 @@ class DataScraper:
         # Collapse 3+ consecutive blank lines into 2
         markdown = re.sub(r'\n{3,}', '\n\n', markdown).strip()
 
+        # Truncate at boilerplate markers (FAQs, Resources, Related Reads)
+        for marker in Constants.TRUNCATE_MARKERS:
+            idx = markdown.find(marker)
+            if idx != -1:
+                markdown = markdown[:idx].strip()
+
         return markdown
 
     def _url_to_filepath(self, url):
@@ -227,22 +233,19 @@ class DataScraper:
 
         return folder, filename
 
-    def _url_to_categories(self, url):
-        """Extract URL path segments as a clean human-readable list.
+    def _url_to_category_path(self, url):
+        """Extract URL path segments as a hierarchical category path string.
 
         Example:
             https://www.cpf.gov.sg/member/account-services/fighting-scams/cpf-account-safeguards
-            → ['account services', 'fighting scams', 'cpf account safeguards']
+            → 'account services/fighting scams/cpf account safeguards'
         """
         parsed = urlparse(url)
         parts = [p for p in parsed.path.strip("/").split("/") if p]
         # Skip the first segment (e.g. 'member') as it's the top-level route
         segments = parts[1:] if len(parts) > 1 else parts
-        return [re.sub(r'[^a-zA-Z0-9 ]', ' ', seg.replace('-', ' ')).strip() for seg in segments]
-
-    def _get_category(self, url):
-        """Derive the category label for a URL based on ALLOWED_PATHS."""
-        return next((v for k, v in Constants.ALLOWED_PATHS.items() if k in url), None)
+        cleaned = [re.sub(r'[^a-zA-Z0-9 ]', ' ', seg.replace('-', ' ')).strip() for seg in segments]
+        return "/".join(cleaned)
 
     def _build_log_entry(self, url, scraped, reason, content_hash=None, needs_embedding=False):
         """Create a standardised log entry dict."""
@@ -250,7 +253,7 @@ class DataScraper:
             Constants.COL_URL: url,
             Constants.COL_SCRAPED: scraped,
             Constants.COL_REASON: reason,
-            Constants.COL_CATEGORY: self._get_category(url),
+            Constants.COL_CATEGORY: self._url_to_category_path(url),
             Constants.COL_SCRAPED_DATE: time.strftime("%Y%m%d"),
             Constants.COL_CONTENT_HASH: content_hash,
             Constants.COL_NEEDS_EMBEDDING: needs_embedding,
@@ -308,6 +311,13 @@ class DataScraper:
                 soup = BeautifulSoup(response.text, "html.parser")
                 text = self._scrape_content(soup)
 
+                # Skip pages with no meaningful content
+                if not text.strip():
+                    self.log.append(self._build_log_entry(url, Constants.SCRAPED_NO, "Empty content after processing"))
+                    continue
+
+                content_hash = hashlib.sha256(text.encode()).hexdigest()
+
                 # Save to mirrored folder structure
                 folder, filename = self._url_to_filepath(url)
                 os.makedirs(folder, exist_ok=True)
@@ -315,14 +325,11 @@ class DataScraper:
 
                 with open(output_path, "w", encoding="utf-8") as f:
                     f.write(f"URL: {url}\n")
-                    f.write(f"Hash: {hashlib.sha256(text.encode()).hexdigest()}\n")
-                    f.write(f"Category: {self._url_to_categories(url)}\n")
+                    f.write(f"Hash: {content_hash}\n")
+                    f.write(f"Category: {self._url_to_category_path(url)}\n")
                     f.write(f"Date Scraped: {time.strftime('%Y%m%d')}\n")
                     f.write(Constants.FILE_SEPARATOR + "\n")
                     f.write(text)
-
-                # Compute content hash for change detection
-                content_hash = hashlib.sha256(text.encode()).hexdigest()
 
                 # Determine if content has changed since last scrape
                 prev_hash = self.prev_hashes.get(url)
@@ -355,17 +362,52 @@ class DataScraper:
     # ==========================================================================
 
     def _save_categories(self, urls):
-        """Write all unique categories found across scraped URLs to a file."""
-        all_categories = set()
+        """Write category paths (flat list including intermediate paths) and category tree to Resources."""
+        all_paths = set()
         for url in urls:
-            all_categories.update(self._url_to_categories(url))
+            full_path = self._url_to_category_path(url)
+            # Add the full path and all intermediate parent paths
+            parts = full_path.split("/")
+            for i in range(1, len(parts) + 1):
+                all_paths.add("/".join(parts[:i]))
 
-        os.makedirs("Resources", exist_ok=True)
-        with open(os.path.join("Resources", "categories.txt"), "w", encoding="utf-8") as f:
-            for category in sorted(all_categories):
-                f.write(category + "\n")
+        os.makedirs(os.path.dirname(Constants.CATEGORIES_LIST_FILE), exist_ok=True)
 
-        self._print(f"  Categories saved: {len(all_categories)} unique entries")
+        # Flat list of all unique category paths (including parents)
+        with open(Constants.CATEGORIES_LIST_FILE, "w", encoding="utf-8") as f:
+            for path in sorted(all_paths):
+                f.write(path + "\n")
+
+        # Build and write tree representation
+        tree = self._build_category_tree(all_paths)
+        tree_str = self._render_tree(tree)
+        with open(Constants.CATEGORIES_TREE_FILE, "w", encoding="utf-8") as f:
+            f.write(tree_str)
+
+        self._print(f"  Categories saved: {len(all_paths)} paths, tree written")
+
+    def _build_category_tree(self, paths):
+        """Build a nested dict representing the category hierarchy."""
+        tree = {}
+        for path in paths:
+            parts = path.split("/")
+            node = tree
+            for part in parts:
+                node = node.setdefault(part, {})
+        return tree
+
+    def _render_tree(self, tree, prefix=""):
+        """Render a nested dict as a tree string with box-drawing characters."""
+        lines = []
+        items = sorted(tree.keys())
+        for i, key in enumerate(items):
+            is_last = (i == len(items) - 1)
+            connector = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{connector}{key}")
+            extension = "    " if is_last else "│   "
+            if tree[key]:
+                lines.append(self._render_tree(tree[key], prefix + extension))
+        return "\n".join(lines)
 
     # ==========================================================================
     # STEP 5 — TEMPLATE LINE DETECTION
@@ -423,7 +465,7 @@ class DataScraper:
                 f.write(line + "\n")
 
     # ==========================================================================
-    # STEP 5 — LOG OUTPUT
+    # STEP 6 — LOG OUTPUT
     # ==========================================================================
 
     def _save_log(self):
