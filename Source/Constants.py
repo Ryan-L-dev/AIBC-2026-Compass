@@ -98,8 +98,8 @@ class Constants:
     DISTANCE_METRIC = "cosine"
 
     # Chunking
-    CHUNK_SIZE = 512
-    CHUNK_OVERLAP = 50
+    CHUNK_SIZE = 2000
+    CHUNK_OVERLAP = 200
 
     # Query
     DEFAULT_TOP_K = 5
@@ -130,10 +130,9 @@ class Constants:
     # Retrieval
     CONFIDENCE_THRESHOLD = 0.3
 
-    # LLM (Amazon Bedrock)
-    LLM_MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0"
+    # LLM (OpenAI)
+    LLM_MODEL_ID = "gpt-4o-mini"
     LLM_MAX_TOKENS = 1024
-    LLM_REGION = "us-east-1"
 
     SYSTEM_PROMPT = (
         "You are a helpful assistant answering questions about CPF (Central Provident Fund) policies in Singapore. "

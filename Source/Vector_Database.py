@@ -1,32 +1,32 @@
 """
 Vector Database Pipeline
 =========================
-Consumes output from Data_Scraper.py (log file + scraped text files) and
-manages a ChromaDB vector store for semantic search.
+Consumes scraped markdown files from Data_Scraper.py and manages a
+ChromaDB vector store for semantic search using LangChain.
 
 Pipeline:
-    1. Read scrape_log.csv to identify pages needing embedding
-    2. Load scraped text files and chunk them
-    3. Generate embeddings and upsert into ChromaDB
-    4. Remove stale vectors for pages whose content has changed
-    5. Query the database with semantic similarity search
+    1. Scan OUTPUT_DIR for scraped markdown files
+    2. Read metadata (URL, hash, category) from file headers
+    3. Compare hashes against existing vectors to detect changes
+    4. Chunk changed/new files and embed into ChromaDB
+    5. Purge vectors for files that no longer exist
+    6. Query the database with semantic similarity search
 
 Usage:
     from Vector_Database import VectorDatabase
 
     vdb = VectorDatabase()
-    vdb.process()  # Embed all pages flagged Needs_Embedding=True
+    vdb.process()
     results = vdb.query("How do I use CPF for housing?")
 
 Dependencies:
-    pip install chromadb sentence-transformers pandas tqdm
+    pip install langchain-text-splitters langchain-chroma langchain-openai pandas tqdm
 """
 
 import os
-import pandas as pd
-from urllib.parse import urlparse
-from sentence_transformers import SentenceTransformer
-import chromadb
+from langchain_text_splitters import MarkdownTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
 from tqdm import tqdm
 
 from Source.Constants import Constants
@@ -36,25 +36,27 @@ class VectorDatabase:
     """
     Manages the embedding pipeline and vector store for scraped CPF content.
 
-    Workflow:
-        1. Read the scrape log to determine which files need embedding
-        2. Delete stale vectors for changed pages
-        3. Chunk text files into overlapping segments
-        4. Generate embeddings via SentenceTransformer
-        5. Upsert chunks with metadata into ChromaDB
-        6. Provide semantic search via query()
+    Uses LangChain's MarkdownTextSplitter for structure-aware chunking
+    and Chroma as the vector store with OpenAI embeddings.
+
+    Source of truth: the scraped .md files in OUTPUT_DIR.
     """
 
     def __init__(self):
-        """Initialise embedding model, ChromaDB client, and collection."""
+        """Initialise embedding model, splitter, and Chroma vector store."""
         self._print("Initialising Vector Database...")
-        self.model = SentenceTransformer(Constants.EMBEDDING_MODEL)
-        self.client = chromadb.PersistentClient(path=Constants.PERSIST_DIR)
-        self.collection = self.client.get_or_create_collection(
-            name=Constants.COLLECTION_NAME,
-            metadata={"hnsw:space": Constants.DISTANCE_METRIC},
+        self.embeddings = OpenAIEmbeddings(model=Constants.EMBEDDING_MODEL)
+        self.splitter = MarkdownTextSplitter(
+            chunk_size=Constants.CHUNK_SIZE,
+            chunk_overlap=Constants.CHUNK_OVERLAP,
         )
-        self._print(f"  Collection '{Constants.COLLECTION_NAME}' ready ({self.collection.count()} vectors)")
+        self.vectorstore = Chroma(
+            collection_name=Constants.COLLECTION_NAME,
+            embedding_function=self.embeddings,
+            persist_directory=Constants.PERSIST_DIR,
+            collection_metadata={"hnsw:space": Constants.DISTANCE_METRIC},
+        )
+        self._print(f"  Collection '{Constants.COLLECTION_NAME}' ready")
 
     def _print(self, msg):
         """Print a message only when VERBOSE mode is enabled."""
@@ -62,59 +64,61 @@ class VectorDatabase:
             print(msg)
 
     # ==========================================================================
-    # LOG PARSING
+    # FILE SCANNING
     # ==========================================================================
 
-    def _get_pages_needing_embedding(self):
+    def _scan_files(self):
         """
-        Read the scrape log and return rows where embedding is required.
+        Scan OUTPUT_DIR for all scraped .md files and parse their headers.
 
         Returns:
-            pd.DataFrame: Rows with Scraped=Y and Needs_Embedding=True.
+            list[dict]: Each dict contains 'filepath', 'url', 'hash', 'category'.
         """
-        if not os.path.exists(Constants.LOG_FILE):
-            self._print("  No log file found. Run Data_Scraper first.")
-            return pd.DataFrame()
+        files = []
+        for root, _, filenames in os.walk(Constants.OUTPUT_DIR):
+            for fname in filenames:
+                if fname.endswith(".md"):
+                    filepath = os.path.join(root, fname)
+                    metadata = self._parse_header(filepath)
+                    if metadata:
+                        metadata["filepath"] = filepath
+                        files.append(metadata)
+        return files
 
-        df = pd.read_csv(Constants.LOG_FILE)
-        return df[
-            (df[Constants.COL_SCRAPED] == Constants.SCRAPED_YES) &
-            (df[Constants.COL_NEEDS_EMBEDDING] == True)
-        ]
-
-    # ==========================================================================
-    # TEXT LOADING
-    # ==========================================================================
-
-    def _url_to_filepath(self, url):
+    def _parse_header(self, filepath):
         """
-        Convert a URL to its local file path (mirrors Data_Scraper logic).
+        Read the first FILE_HEADER_LINES of a file and extract metadata.
+
+        Expected format:
+            URL: https://...
+            Hash: abc123...
+            Category: ['cat1', 'cat2']
+            ====...
 
         Returns:
-            str: Full path to the scraped text file.
+            dict: With keys 'url', 'hash', 'category', or None if malformed.
         """
-        parsed = urlparse(url)
-        parts = [p for p in parsed.path.strip("/").split("/") if p]
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                lines = [f.readline() for _ in range(Constants.FILE_HEADER_LINES)]
 
-        if not parts:
-            return os.path.join(Constants.OUTPUT_DIR, "index.txt")
+            url = lines[0].strip().removeprefix("URL: ")
+            content_hash = lines[1].strip().removeprefix("Hash: ")
+            category = lines[2].strip().removeprefix("Category: ")
 
-        folder = os.path.join(Constants.OUTPUT_DIR, *parts[:-1]) if len(parts) > 1 else Constants.OUTPUT_DIR
-        filename = f"{parts[-1]}.txt"
-        return os.path.join(folder, filename)
+            return {"url": url, "hash": content_hash, "category": category}
+        except (IndexError, IOError):
+            return None
 
-    def _load_text(self, filepath):
+    def _load_content(self, filepath):
         """
-        Load scraped text from file, skipping the URL header and separator.
+        Load markdown content from file, skipping the header.
 
         Returns:
-            str: Clean text content, or empty string if file not found.
+            str: Markdown content below the separator.
         """
-        if not os.path.exists(filepath):
-            return ""
         with open(filepath, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        # Skip header lines (URL line + separator)
         return "".join(lines[Constants.FILE_HEADER_LINES:])
 
     # ==========================================================================
@@ -123,79 +127,76 @@ class VectorDatabase:
 
     def _chunk_text(self, text):
         """
-        Split text into overlapping chunks of fixed character length.
+        Split markdown text into structure-aware chunks.
 
-        Uses CHUNK_SIZE and CHUNK_OVERLAP to create segments that maintain
-        context across boundaries.
+        Uses LangChain's MarkdownTextSplitter which splits by:
+            1. Headings (##, ###)
+            2. Paragraphs (double newline)
+            3. Lines (single newline)
+            4. Words (space) — last resort
 
         Returns:
             list[str]: List of text chunks.
         """
         if not text.strip():
             return []
-
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + Constants.CHUNK_SIZE
-            chunks.append(text[start:end])
-            start = end - Constants.CHUNK_OVERLAP
-
-        return chunks
+        docs = self.splitter.create_documents([text])
+        return [doc.page_content for doc in docs]
 
     # ==========================================================================
     # VECTOR OPERATIONS
     # ==========================================================================
 
-    def _delete_stale_vectors(self, url):
+    def _get_existing_hashes(self):
         """
-        Remove all existing vectors for a given URL.
+        Retrieve all unique (url, content_hash) pairs currently in the vector store.
 
-        Called before re-embedding a page whose content has changed,
-        ensuring no stale chunks remain in the collection.
+        Returns:
+            dict: Mapping of URL → content_hash for all stored vectors.
         """
-        existing = self.collection.get(where={"url": url})
+        collection = self.vectorstore._collection
+        all_data = collection.get(include=["metadatas"])
+        url_hashes = {}
+        for meta in all_data["metadatas"]:
+            url_hashes[meta["url"]] = meta.get("content_hash", "")
+        return url_hashes
+
+    def _delete_vectors_for_url(self, url):
+        """Remove all vectors associated with a given URL."""
+        collection = self.vectorstore._collection
+        existing = collection.get(where={"url": url})
         if existing["ids"]:
-            self.collection.delete(ids=existing["ids"])
+            collection.delete(ids=existing["ids"])
 
-    def _embed_and_upsert(self, url, text, category, content_hash, scraped_date):
+    def _embed_and_upsert(self, url, text, category, content_hash):
         """
         Chunk text, generate embeddings, and upsert into ChromaDB.
 
-        Each chunk is stored with metadata for filtering and traceability.
-
         Args:
             url: Source page URL
-            text: Full scraped text content
-            category: Page category from ALLOWED_PATHS
-            content_hash: SHA-256 hash of the text
-            scraped_date: Date the page was scraped (YYYYMMDD)
+            text: Full scraped markdown content
+            category: Category string from file header
+            content_hash: SHA-256 hash from file header
         """
         chunks = self._chunk_text(text)
         if not chunks:
             return
 
-        # Generate embeddings for all chunks in one batch
-        embeddings = self.model.encode(chunks).tolist()
-
-        # Prepare batch data for ChromaDB
-        ids = [f"{content_hash}_{i}" for i in range(len(chunks))]
         metadatas = [
             {
                 "url": url,
-                "category": category or "",
+                "category": category,
                 "chunk_index": i,
                 "content_hash": content_hash,
-                "scraped_date": scraped_date,
             }
             for i in range(len(chunks))
         ]
+        ids = [f"{content_hash}_{i}" for i in range(len(chunks))]
 
-        self.collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            documents=chunks,
+        self.vectorstore.add_texts(
+            texts=chunks,
             metadatas=metadatas,
+            ids=ids,
         )
 
     # ==========================================================================
@@ -207,13 +208,30 @@ class VectorDatabase:
         Execute the full embedding pipeline.
 
         Steps:
-            1. Read log to find pages needing embedding
-            2. For each page: delete stale vectors, load text, chunk, embed, upsert
-            3. Report summary statistics
+            1. Scan files and read their header metadata
+            2. Compare file hashes against stored vector hashes
+            3. Embed new/changed files, skip unchanged ones
+            4. Purge vectors for files that no longer exist
         """
-        to_embed = self._get_pages_needing_embedding()
+        # Scan current files
+        files = self._scan_files()
+        file_urls = {f["url"] for f in files}
+        self._print(f"  Files found: {len(files)}")
 
-        if to_embed.empty:
+        # Get existing state from vector store
+        existing_hashes = self._get_existing_hashes()
+
+        # Determine what needs updating
+        to_embed = [f for f in files if f["hash"] != existing_hashes.get(f["url"])]
+        to_purge = [url for url in existing_hashes if url not in file_urls]
+
+        # Purge vectors for deleted files
+        if to_purge:
+            self._print(f"  Purging vectors for {len(to_purge)} removed files")
+            for url in to_purge:
+                self._delete_vectors_for_url(url)
+
+        if not to_embed:
             self._print("  No pages need embedding. Database is up to date.")
             return
 
@@ -222,25 +240,21 @@ class VectorDatabase:
         embedded_count = 0
         total_chunks = 0
 
-        for _, row in tqdm(to_embed.iterrows(), total=len(to_embed), desc="  Embedding", disable=not Constants.VERBOSE):
-            url = row[Constants.COL_URL]
-            filepath = self._url_to_filepath(url)
-            text = self._load_text(filepath)
+        for file_info in tqdm(to_embed, desc="  Embedding", disable=not Constants.VERBOSE):
+            text = self._load_content(file_info["filepath"])
 
             if not text.strip():
-                self._print(f"  SKIPPED (empty): {filepath}")
                 continue
 
-            # Remove old vectors for this URL before re-embedding
-            self._delete_stale_vectors(url)
+            # Remove old vectors if this is an update
+            if file_info["url"] in existing_hashes:
+                self._delete_vectors_for_url(file_info["url"])
 
-            # Embed and store
             self._embed_and_upsert(
-                url=url,
+                url=file_info["url"],
                 text=text,
-                category=row.get(Constants.COL_CATEGORY),
-                content_hash=row[Constants.COL_CONTENT_HASH],
-                scraped_date=str(row.get(Constants.COL_SCRAPED_DATE, "")),
+                category=file_info["category"],
+                content_hash=file_info["hash"],
             )
 
             embedded_count += 1
@@ -248,7 +262,7 @@ class VectorDatabase:
 
         self._print(f"\n  Pages embedded  : {embedded_count}")
         self._print(f"  Total chunks    : {total_chunks}")
-        self._print(f"  Vectors in DB   : {self.collection.count()}")
+        self._print(f"  Vectors in DB   : {self.vectorstore._collection.count()}")
 
     # ==========================================================================
     # QUERY
@@ -262,7 +276,6 @@ class VectorDatabase:
             query_text: Natural language query string.
             top_k: Number of most similar chunks to return (default from Constants).
             categories: Optional list of categories to filter on.
-                        e.g. ["Housing", "Retirement"]
 
         Returns:
             list[dict]: Ranked results with keys: text, url, category,
@@ -271,29 +284,25 @@ class VectorDatabase:
         if top_k is None:
             top_k = Constants.DEFAULT_TOP_K
 
-        query_embedding = self.model.encode([query_text]).tolist()
-
         # Build filter if categories specified
         where_filter = None
         if categories:
             where_filter = {"category": {"$in": categories}}
 
-        results = self.collection.query(
-            query_embeddings=query_embedding,
-            n_results=top_k,
-            where=where_filter,
-            include=["documents", "metadatas", "distances"],
+        results = self.vectorstore.similarity_search_with_score(
+            query=query_text,
+            k=top_k,
+            filter=where_filter,
         )
 
-        # Format results into a clean list
         formatted = []
-        for i in range(len(results["ids"][0])):
+        for doc, score in results:
             formatted.append({
-                "text": results["documents"][0][i],
-                "url": results["metadatas"][0][i]["url"],
-                "category": results["metadatas"][0][i]["category"],
-                "chunk_index": results["metadatas"][0][i]["chunk_index"],
-                "score": 1 - results["distances"][0][i],  # Convert distance to similarity
+                "text": doc.page_content,
+                "url": doc.metadata.get("url", ""),
+                "category": doc.metadata.get("category", ""),
+                "chunk_index": doc.metadata.get("chunk_index", 0),
+                "score": 1 - score,  # Convert distance to similarity
             })
 
         return formatted
