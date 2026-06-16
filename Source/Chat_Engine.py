@@ -18,12 +18,15 @@ Usage:
     chat.reset()
 
 Dependencies:
-    pip install boto3 sentence-transformers chromadb
+    pip install langchain-openai chromadb
 """
 
 import json
 import os
 import time
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from Source.Constants import Constants
 
@@ -57,11 +60,10 @@ class ChatEngine:
         self._init_llm_client()
 
     def _init_llm_client(self):
-        """Initialise the Amazon Bedrock client for LLM calls."""
-        import boto3
-        self.bedrock = boto3.client(
-            "bedrock-runtime",
-            region_name=Constants.LLM_REGION,
+        """Initialise the OpenAI LLM client via LangChain."""
+        self.llm = ChatOpenAI(
+            model=Constants.LLM_MODEL_ID,
+            max_tokens=Constants.LLM_MAX_TOKENS,
         )
 
     def _print(self, msg):
@@ -205,7 +207,7 @@ class ChatEngine:
 
     def generate(self, prompt):
         """
-        Call the LLM (Amazon Bedrock) to generate a response.
+        Call the LLM (OpenAI via LangChain) to generate a response.
 
         Args:
             prompt: Dict with 'system' and 'messages' keys from build_prompt().
@@ -214,18 +216,12 @@ class ChatEngine:
             str: The LLM's generated response text.
         """
         try:
-            response = self.bedrock.invoke_model(
-                modelId=Constants.LLM_MODEL_ID,
-                body=json.dumps({
-                    "system": prompt["system"],
-                    "messages": prompt["messages"],
-                    "max_tokens": Constants.LLM_MAX_TOKENS,
-                    "anthropic_version": "bedrock-2023-05-31",
-                }),
-            )
-
-            result = json.loads(response["body"].read())
-            return result["content"][0]["text"]
+            messages = [
+                SystemMessage(content=prompt["system"]),
+                HumanMessage(content=prompt["messages"][0]["content"]),
+            ]
+            response = self.llm.invoke(messages)
+            return response.content
 
         except Exception as e:
             self._print(f"  LLM Error: {e}")
@@ -284,17 +280,12 @@ class ChatEngine:
 
         # Ask LLM to summarise
         try:
-            summary_response = self.bedrock.invoke_model(
-                modelId=Constants.LLM_MODEL_ID,
-                body=json.dumps({
-                    "system": Constants.SUMMARY_PROMPT,
-                    "messages": [{"role": "user", "content": older_text}],
-                    "max_tokens": Constants.SUMMARY_MAX_TOKENS,
-                    "anthropic_version": "bedrock-2023-05-31",
-                }),
-            )
-            result = json.loads(summary_response["body"].read())
-            self.history["summary"] = result["content"][0]["text"]
+            messages = [
+                SystemMessage(content=Constants.SUMMARY_PROMPT),
+                HumanMessage(content=older_text),
+            ]
+            response = self.llm.invoke(messages, max_tokens=Constants.SUMMARY_MAX_TOKENS)
+            self.history["summary"] = response.content
         except Exception as e:
             # Fallback: simple truncation if LLM call fails
             self._print(f"  Summary Error: {e}")
