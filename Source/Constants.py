@@ -29,8 +29,8 @@ class Constants:
     # OUTPUT
     # ==========================================================================
 
-    OUTPUT_DIR = "scraped_pages"
-    LOG_FILE = "scrape_log.csv"
+    OUTPUT_DIR = os.path.join("Data", "scraped_pages")
+    LOG_FILE = os.path.join("Data", "resources", "scrape_log.csv")
 
     # ==========================================================================
     # SCRAPING BEHAVIOUR
@@ -53,32 +53,49 @@ class Constants:
     # URL FILTERING
     # ==========================================================================
 
-    ALLOWED_PATHS = {
-        "/member/retirement-income": "Retirement",
-        "/member/cpf-overview": "Overview",
-        "/member/home-ownership": "Housing",
-        "/member/healthcare-financing": "Healthcare",
-        "/member/growing-your-savings": "Savings",
-        "/member/account-services": "Account Services",
-    }
+    ALLOWED_PATHS = [
+        "/member/retirement-income",
+        "/member/cpf-overview",
+        "/member/home-ownership",
+        "/member/healthcare-financing",
+        "/member/growing-your-savings",
+        "/member/account-services",
+    ]
 
     # ==========================================================================
     # HTML NOISE REMOVAL
     # ==========================================================================
 
     NOISE_TAGS = ["script", "style", "nav", "footer", "header"]
-    NOISE_CLASSES = ["anchor-tab-list", "stick-tabs", "social-sharing-bar"]
+    NOISE_CLASSES = [
+        "anchor-tab-list",      # Tab navigation bar
+        "stick-tabs",           # Sticky tab navigation
+        "social-sharing-bar",   # Social media sharing buttons
+        "content-change-log",   # Temporary site-wide notice banners (e.g. Singtel outage)
+        "related-articles",     # "Related Reads" article carousel
+    ]
 
 
     # Known template/boilerplate lines to strip from scraped content.
     # Discovered via template detection runs and manually curated.
     NOISE_LINES = ["true", "false", "null", "undefined", ""]
 
+    # Lines that mark the start of trailing boilerplate sections.
+    # All content from these markers onwards is truncated.
+    TRUNCATE_MARKERS = [
+        "\nResources\n",              # External links section (standalone heading)
+        "### Common questions",       # FAQ links to cpf.gov.sg/service/article pages
+        "### Need more information?", # Links to external resources (HDB, MOH, etc.)
+        "### Related Reads",          # Article previews (fallback if CSS class missed)
+    ]
+
     # Template detection: lines appearing in more than this fraction of files
     # are flagged as potential template noise and written to TEMPLATE_LINES_FILE.
     TEMPLATE_LINE_THRESHOLD = 0.5  # 50% of files
     TEMPLATE_LINE_MIN_LENGTH = 10  # Ignore trivially short lines
-    TEMPLATE_LINES_FILE = os.path.join("Resources", "template_lines.txt")
+    TEMPLATE_LINES_FILE = os.path.join("Data", "resources", "template_lines.txt")
+    CATEGORIES_LIST_FILE = os.path.join("Data", "resources", "categories.txt")
+    CATEGORIES_TREE_FILE = os.path.join("Data", "resources", "category_tree.txt")
 
     # ==========================================================================
     # FILE FORMAT
@@ -93,13 +110,16 @@ class Constants:
     # ==========================================================================
 
     COLLECTION_NAME = "cpf_knowledge_base"
-    PERSIST_DIR = "vector_store"
+    PERSIST_DIR = os.path.join("Data", "vector_store")
     EMBEDDING_MODEL = "text-embedding-3-small"
     DISTANCE_METRIC = "cosine"
 
     # Chunking
     CHUNK_SIZE = 2000
     CHUNK_OVERLAP = 200
+
+    # Embeddings
+    USE_LOCAL_EMBEDDINGS = True  # Set to False for OpenAI (production/Streamlit)
 
     # Query
     DEFAULT_TOP_K = 5
@@ -125,7 +145,7 @@ class Constants:
 
     # History management
     MAX_HISTORY_TURNS = 5
-    CHAT_HISTORY_FILE = "chat_history.json"
+    CHAT_HISTORY_FILE = os.path.join("Data", "chat_history.json")
 
     # Retrieval
     CONFIDENCE_THRESHOLD = 0.3
@@ -133,21 +153,4 @@ class Constants:
     # LLM (OpenAI)
     LLM_MODEL_ID = "gpt-4o-mini"
     LLM_MAX_TOKENS = 1024
-
-    SYSTEM_PROMPT = (
-        "You are a helpful assistant answering questions about CPF (Central Provident Fund) policies in Singapore. "
-        "Answer using ONLY the provided context. "
-        "If the context does not contain enough information to answer, say so clearly. "
-        "Cite source URLs when referencing specific information."
-    )
-
-    SUMMARY_PROMPT = (
-        "Summarise this conversation in 2-3 sentences. "
-        "Preserve key topics, specific details (numbers, dates, policy names), "
-        "and any user preferences or constraints mentioned."
-    )
     SUMMARY_MAX_TOKENS = 200
-
-    # Response fallbacks
-    NO_ANSWER_MESSAGE = "I don't have information on that topic based on the available CPF policies."
-    ERROR_MESSAGE = "Sorry, I encountered an error generating a response. Please try again."
