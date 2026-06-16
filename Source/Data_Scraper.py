@@ -182,6 +182,12 @@ class DataScraper:
             or soup
         )
 
+        # Convert custom heading divs to proper h1-h6 tags
+        # CPF site uses classes like 'headline-1' through 'headline-6'
+        for level in range(1, 7):
+            for el in target.find_all(class_=re.compile(rf'headline-{level}\b')):
+                el.name = f"h{level}"
+
         # Convert to markdown
         markdown = md(str(target), heading_style="ATX", strip=['img'])
 
@@ -311,6 +317,7 @@ class DataScraper:
                     f.write(f"URL: {url}\n")
                     f.write(f"Hash: {hashlib.sha256(text.encode()).hexdigest()}\n")
                     f.write(f"Category: {self._url_to_categories(url)}\n")
+                    f.write(f"Date Scraped: {time.strftime('%Y%m%d')}\n")
                     f.write(Constants.FILE_SEPARATOR + "\n")
                     f.write(text)
 

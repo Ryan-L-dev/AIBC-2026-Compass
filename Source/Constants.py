@@ -84,8 +84,8 @@ class Constants:
     # FILE FORMAT
     # ==========================================================================
 
-    # Number of header lines in scraped text files (URL + Hash + Category + separator)
-    FILE_HEADER_LINES = 4
+    # Number of header lines in scraped text files (URL + Hash + Category + Date Scraped + separator)
+    FILE_HEADER_LINES = 5
     FILE_SEPARATOR = "=" * 80
 
     # ==========================================================================
@@ -94,7 +94,7 @@ class Constants:
 
     COLLECTION_NAME = "cpf_knowledge_base"
     PERSIST_DIR = "vector_store"
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL = "text-embedding-3-small"
     DISTANCE_METRIC = "cosine"
 
     # Chunking
