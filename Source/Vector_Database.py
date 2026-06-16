@@ -25,7 +25,6 @@ Dependencies:
 
 import os
 from langchain_text_splitters import MarkdownTextSplitter
-from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from tqdm import tqdm
 
@@ -45,7 +44,7 @@ class VectorDatabase:
     def __init__(self):
         """Initialise embedding model, splitter, and Chroma vector store."""
         self._print("Initialising Vector Database...")
-        self.embeddings = OpenAIEmbeddings(model=Constants.EMBEDDING_MODEL)
+        self.embeddings = self._init_embeddings()
         self.splitter = MarkdownTextSplitter(
             chunk_size=Constants.CHUNK_SIZE,
             chunk_overlap=Constants.CHUNK_OVERLAP,
@@ -57,6 +56,30 @@ class VectorDatabase:
             collection_metadata={"hnsw:space": Constants.DISTANCE_METRIC},
         )
         self._print(f"  Collection '{Constants.COLLECTION_NAME}' ready")
+
+    def _init_embeddings(self):
+        """Initialise embedding model based on configuration flag."""
+        if Constants.USE_LOCAL_EMBEDDINGS:
+            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+            from langchain_core.embeddings import Embeddings
+
+            class LocalEmbeddings(Embeddings):
+                """LangChain-compatible wrapper around ChromaDB's default ONNX embeddings."""
+                def __init__(self):
+                    self._fn = DefaultEmbeddingFunction()
+
+                def embed_documents(self, texts):
+                    return self._fn(texts)
+
+                def embed_query(self, text):
+                    return self._fn([text])[0]
+
+            self._print("  Using local embeddings (ChromaDB default)")
+            return LocalEmbeddings()
+        else:
+            from langchain_openai import OpenAIEmbeddings
+            self._print("  Using OpenAI embeddings")
+            return OpenAIEmbeddings(model=Constants.EMBEDDING_MODEL)
 
     def _print(self, msg):
         """Print a message only when VERBOSE mode is enabled."""
@@ -92,7 +115,8 @@ class VectorDatabase:
         Expected format:
             URL: https://...
             Hash: abc123...
-            Category: ['cat1', 'cat2']
+            Category: account services/fighting scams
+            Date Scraped: 20250715
             ====...
 
         Returns:
@@ -268,14 +292,14 @@ class VectorDatabase:
     # QUERY
     # ==========================================================================
 
-    def query(self, query_text, top_k=None, categories=None):
+    def query(self, query_text, top_k=None, where_filter=None):
         """
         Perform semantic similarity search against the vector store.
 
         Args:
             query_text: Natural language query string.
             top_k: Number of most similar chunks to return (default from Constants).
-            categories: Optional list of categories to filter on.
+            where_filter: Optional pre-built Chroma where filter dict.
 
         Returns:
             list[dict]: Ranked results with keys: text, url, category,
@@ -283,11 +307,6 @@ class VectorDatabase:
         """
         if top_k is None:
             top_k = Constants.DEFAULT_TOP_K
-
-        # Build filter if categories specified
-        where_filter = None
-        if categories:
-            where_filter = {"category": {"$in": categories}}
 
         results = self.vectorstore.similarity_search_with_score(
             query=query_text,
