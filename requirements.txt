@@ -4,3 +4,4 @@ BeautifulSoup4==4.12.3
 tqdm==4.66.4
 sentence-transformers==2.7.0
 chromadb==1.5.9
+markdownify==1.2.2

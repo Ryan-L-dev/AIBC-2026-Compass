@@ -12,6 +12,8 @@ Usage:
     print(Constants.CHUNK_SIZE)
 """
 
+import os
+
 
 class Constants:
     """Single source of truth for all configuration values."""
@@ -67,15 +69,23 @@ class Constants:
     NOISE_TAGS = ["script", "style", "nav", "footer", "header"]
     NOISE_CLASSES = ["anchor-tab-list", "stick-tabs", "social-sharing-bar"]
 
-    # JavaScript artefacts to filter from extracted text
-    JS_ARTEFACTS = ("true", "false", "null", "undefined", "")
+
+    # Known template/boilerplate lines to strip from scraped content.
+    # Discovered via template detection runs and manually curated.
+    NOISE_LINES = ["true", "false", "null", "undefined", ""]
+
+    # Template detection: lines appearing in more than this fraction of files
+    # are flagged as potential template noise and written to TEMPLATE_LINES_FILE.
+    TEMPLATE_LINE_THRESHOLD = 0.5  # 50% of files
+    TEMPLATE_LINE_MIN_LENGTH = 10  # Ignore trivially short lines
+    TEMPLATE_LINES_FILE = os.path.join("Resources", "template_lines.txt")
 
     # ==========================================================================
     # FILE FORMAT
     # ==========================================================================
 
-    # Number of header lines in scraped text files (URL line + separator)
-    FILE_HEADER_LINES = 2
+    # Number of header lines in scraped text files (URL + Hash + Category + separator)
+    FILE_HEADER_LINES = 4
     FILE_SEPARATOR = "=" * 80
 
     # ==========================================================================
@@ -142,34 +152,3 @@ class Constants:
     # Response fallbacks
     NO_ANSWER_MESSAGE = "I don't have information on that topic based on the available CPF policies."
     ERROR_MESSAGE = "Sorry, I encountered an error generating a response. Please try again."
-
-    # ==========================================================================
-    # CATEGORY DETECTION KEYWORDS
-    # ==========================================================================
-
-    CATEGORY_KEYWORDS = {
-        "Retirement": [
-            "retire", "retirement", "pension", "cpf life", "payout",
-            "elderly", "old age", "55", "65", "withdrawal age",
-        ],
-        "Overview": [
-            "cpf overview", "what is cpf", "cpf account", "ordinary account",
-            "special account", "medisave account", "contribution rate",
-        ],
-        "Housing": [
-            "house", "housing", "flat", "hdb", "mortgage", "property",
-            "home loan", "bto", "resale", "downpayment", "home ownership",
-        ],
-        "Healthcare": [
-            "medisave", "medishield", "hospital", "medical", "health",
-            "insurance", "careshield", "eldershield", "healthcare",
-        ],
-        "Savings": [
-            "savings", "interest", "top up", "grow", "investment",
-            "cpfis", "voluntary contribution", "shielded",
-        ],
-        "Account Services": [
-            "account", "nomination", "beneficiary", "transfer",
-            "statement", "login", "singpass", "update details",
-        ],
-    }

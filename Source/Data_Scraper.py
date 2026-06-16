@@ -2,8 +2,9 @@
 Data Scraper for CPF.gov.sg
 ============================
 Scrapes structured content from the CPF website using its sitemap.
-Respects robots.txt, filters URLs by allowed paths, extracts clean text,
-and saves results to mirrored folder structure with a CSV log.
+Respects robots.txt, filters URLs by allowed paths, extracts main
+content as markdown, and saves results to mirrored folder structure
+with a CSV log.
 
 Usage:
     python Data_Scraper.py
@@ -13,17 +14,20 @@ Configuration:
     allowed paths, output directory, delay, or verbosity.
 
 Dependencies:
-    pip install requests beautifulsoup4 pandas tqdm
+    pip install requests beautifulsoup4 pandas tqdm markdownify
 """
 
 import requests
 from bs4 import BeautifulSoup
+from markdownify import markdownify as md
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 import xml.etree.ElementTree as ET
 import os
+import re
 import time
 import hashlib
+from collections import Counter
 import pandas as pd
 from tqdm import tqdm
 
@@ -32,14 +36,14 @@ from Source.Constants import Constants
 
 class DataScraper:
     """
-    Web scraper that extracts text content from CPF.gov.sg pages.
+    Web scraper that extracts main content from CPF.gov.sg pages as markdown.
 
     Workflow:
         1. Parse robots.txt to determine which URLs are allowed
         2. Read the sitemap XML to discover all available URLs
         3. Filter URLs to only those matching allowed path prefixes
-        4. Scrape each allowed URL, extracting clean text content
-        5. Save scraped text to a mirrored folder structure
+        4. Scrape each allowed URL, converting main content to markdown
+        5. Save scraped markdown to a mirrored folder structure
         6. Generate a CSV log with scrape results and metadata
     """
 
@@ -145,19 +149,19 @@ class DataScraper:
     # STEP 3 — CONTENT EXTRACTION
     # ==========================================================================
 
-    def _scrape_text(self, soup):
+    def _scrape_content(self, soup):
         """
-        Extract clean text content from a BeautifulSoup-parsed page.
+        Extract main content from a BeautifulSoup-parsed page as markdown.
 
         Process:
             1. Remove noisy HTML tags (scripts, nav, footer, etc.)
             2. Remove elements with known non-content CSS classes
             3. Locate the main content container (main/article/content)
-            4. Extract text and filter out JS artefacts and blank lines
-            5. Normalize text by replacing special characters
+            4. Convert HTML to markdown using markdownify
+            5. Clean up excessive blank lines
 
         Returns:
-            str: Cleaned text content with one logical line per output line.
+            str: Page content converted to markdown format.
         """
         # Strip noisy tags
         for tag in Constants.NOISE_TAGS:
@@ -170,33 +174,27 @@ class DataScraper:
                 element.decompose()
 
         # Prefer the main content area; fall back to full page
-        main_content = (
+        target = (
             soup.find("main")
             or soup.find("article")
             or soup.find(id="content")
             or soup.find(class_="content")
+            or soup
         )
 
-        target = main_content if main_content else soup
-        lines = target.get_text(separator="\n", strip=True).splitlines()
+        # Convert to markdown
+        markdown = md(str(target), heading_style="ATX", strip=['img'])
 
-        # Remove common JavaScript rendering artefacts
-        filtered_lines = [
-            line for line in lines
-            if line.strip() not in Constants.JS_ARTEFACTS
-        ]
-        
-        # Normalize text by cleaning special characters and controlling whitespace
-        normalized_lines = []
-        for line in filtered_lines:
-            # Remove special characters that shouldn't be in plain text
-            cleaned_line = line.replace('\xa0', ' ').replace('&nbsp;', ' ')
-            # Normalize multiple spaces to single space
-            cleaned_line = ' '.join(cleaned_line.split())
-            # Only keep lines with alphanumeric content (or reasonable special chars)
-            if any(c.isalnum() for c in cleaned_line) and cleaned_line.strip():
-                normalized_lines.append(cleaned_line)
-        return "\n".join(normalized_lines)
+        # Remove known noise lines (template boilerplate)
+        lines = markdown.splitlines()
+        noise_set = set(Constants.NOISE_LINES)
+        lines = [l for l in lines if l.strip() not in noise_set]
+        markdown = "\n".join(lines)
+
+        # Collapse 3+ consecutive blank lines into 2
+        markdown = re.sub(r'\n{3,}', '\n\n', markdown).strip()
+
+        return markdown
 
     def _url_to_filepath(self, url):
         """
@@ -206,7 +204,7 @@ class DataScraper:
         Example:
             https://www.cpf.gov.sg/member/home-ownership/buying-a-home
             → folder: scraped_pages/member/home-ownership
-            → filename: buying-a-home.txt
+            → filename: buying-a-home.md
 
         Returns:
             tuple[str, str]: (folder_path, filename)
@@ -216,12 +214,25 @@ class DataScraper:
 
         if not parts:
             folder = Constants.OUTPUT_DIR
-            filename = "index.txt"
+            filename = "index.md"
         else:
             folder = os.path.join(Constants.OUTPUT_DIR, *parts[:-1]) if len(parts) > 1 else Constants.OUTPUT_DIR
-            filename = f"{parts[-1]}.txt"
+            filename = f"{parts[-1]}.md"
 
         return folder, filename
+
+    def _url_to_categories(self, url):
+        """Extract URL path segments as a clean human-readable list.
+
+        Example:
+            https://www.cpf.gov.sg/member/account-services/fighting-scams/cpf-account-safeguards
+            → ['account services', 'fighting scams', 'cpf account safeguards']
+        """
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.strip("/").split("/") if p]
+        # Skip the first segment (e.g. 'member') as it's the top-level route
+        segments = parts[1:] if len(parts) > 1 else parts
+        return [re.sub(r'[^a-zA-Z0-9 ]', ' ', seg.replace('-', ' ')).strip() for seg in segments]
 
     def _get_category(self, url):
         """Derive the category label for a URL based on ALLOWED_PATHS."""
@@ -287,9 +298,9 @@ class DataScraper:
                     self.log.append(self._build_log_entry(url, Constants.SCRAPED_NO, f"Redirected to {response.url}"))
                     continue
 
-                # Parse HTML and extract clean text
+                # Parse HTML and extract markdown content
                 soup = BeautifulSoup(response.text, "html.parser")
-                text = self._scrape_text(soup)
+                text = self._scrape_content(soup)
 
                 # Save to mirrored folder structure
                 folder, filename = self._url_to_filepath(url)
@@ -298,6 +309,8 @@ class DataScraper:
 
                 with open(output_path, "w", encoding="utf-8") as f:
                     f.write(f"URL: {url}\n")
+                    f.write(f"Hash: {hashlib.sha256(text.encode()).hexdigest()}\n")
+                    f.write(f"Category: {self._url_to_categories(url)}\n")
                     f.write(Constants.FILE_SEPARATOR + "\n")
                     f.write(text)
 
@@ -324,8 +337,86 @@ class DataScraper:
         # Write the results log
         self._save_log()
 
+        # Detect repeated template lines across all scraped files
+        self._detect_template_lines()
+
+        # Save all discovered categories to Resources
+        self._save_categories(filtered_urls)
+
     # ==========================================================================
-    # STEP 4 — LOG OUTPUT
+    # STEP 4 — CATEGORY EXPORT
+    # ==========================================================================
+
+    def _save_categories(self, urls):
+        """Write all unique categories found across scraped URLs to a file."""
+        all_categories = set()
+        for url in urls:
+            all_categories.update(self._url_to_categories(url))
+
+        os.makedirs("Resources", exist_ok=True)
+        with open(os.path.join("Resources", "categories.txt"), "w", encoding="utf-8") as f:
+            for category in sorted(all_categories):
+                f.write(category + "\n")
+
+        self._print(f"  Categories saved: {len(all_categories)} unique entries")
+
+    # ==========================================================================
+    # STEP 5 — TEMPLATE LINE DETECTION
+    # ==========================================================================
+
+    def _detect_template_lines(self):
+        """
+        Post-processing detection step: identify lines repeated across a high
+        percentage of scraped files (likely website template/boilerplate).
+
+        Outputs candidates to Resources/template_lines.txt for manual review.
+        Developers should review this file and add confirmed template lines
+        to Constants.NOISE_LINES, which are stripped during scraping.
+        """
+        # Collect all .md files
+        md_files = []
+        for root, _, files in os.walk(Constants.OUTPUT_DIR):
+            for f in files:
+                if f.endswith(".md"):
+                    md_files.append(os.path.join(root, f))
+
+        if len(md_files) < 3:
+            self._print("  Skipping template detection — fewer than 3 files")
+            return
+
+        # Count in how many files each non-empty line appears
+        line_file_count = Counter()
+        for filepath in md_files:
+            with open(filepath, "r", encoding="utf-8") as f:
+                lines = f.readlines()[Constants.FILE_HEADER_LINES:]
+            unique_lines = {
+                line.strip() for line in lines
+                if line.strip() and len(line.strip()) >= Constants.TEMPLATE_LINE_MIN_LENGTH
+            }
+            for line in unique_lines:
+                line_file_count[line] += 1
+
+        # Identify template lines exceeding the threshold
+        threshold_count = len(md_files) * Constants.TEMPLATE_LINE_THRESHOLD
+        template_lines = {
+            line for line, count in line_file_count.items()
+            if count >= threshold_count
+        }
+
+        if not template_lines:
+            self._print("  No new template line candidates detected")
+            return
+
+        self._print(f"  Detected {len(template_lines)} template line candidates — see {Constants.TEMPLATE_LINES_FILE}")
+
+        # Write candidates to Resources folder for manual review
+        os.makedirs(os.path.dirname(Constants.TEMPLATE_LINES_FILE), exist_ok=True)
+        with open(Constants.TEMPLATE_LINES_FILE, "w", encoding="utf-8") as f:
+            for line in sorted(template_lines):
+                f.write(line + "\n")
+
+    # ==========================================================================
+    # STEP 5 — LOG OUTPUT
     # ==========================================================================
 
     def _save_log(self):
