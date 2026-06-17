@@ -427,21 +427,53 @@ class ChatEngine:
 
         # Step 1 — Self-query: detect categories and refine query
         refined_query, categories = self.detect_categories(query)
+        self._print(f"  === DEBUG ===")
+        self._print(f"  After detect_categories:")
+        self._print(f"  Refined query: '{refined_query}'")
+        self._print(f"  Categories: {categories}")
 
         # Step 2 — Search vector DB with refined query and category filters
         chunks = self.search(refined_query, categories)
+        self._print(f"  === DEBUG ===")
+        self._print(f"  After search:")
+        self._print(f"  Number of chunks retrieved: {len(chunks)}")
+        for i, chunk in enumerate(chunks, 1):
+            self._print(f"  Chunk {i}:")
+            self._print(f"    - Score: {chunk.get('score', 'N/A')}")
+            self._print(f"    - Category: {chunk.get('category', 'N/A')}")
+            self._print(f"    - URL: {chunk.get('url', 'N/A')[:50]}...")
+            self._print(f"    - Text preview: {chunk.get('text', 'N/A')[:100]}...")
 
         # Step 3 — Build context
         context = self.build_context(chunks)
+        self._print(f"  === DEBUG ===")
+        self._print(f"  After build_context:")
+        self._print(f"  Context length: {len(context)} characters")
+        if context:
+            self._print(f"  Context preview: {context[:200]}...")
+        else:
+            self._print(f"  Context: (empty)")
 
         # Step 4 — Build prompt
         prompt = self.build_prompt(query, context)
+        self._print(f"  === DEBUG ===")
+        self._print(f"  After build_prompt:")
+        self._print(f"  Prompt system length: {len(prompt.get('system', ''))} characters")
+        self._print(f"  Prompt messages length: {len(prompt.get('messages', []))} items")
+        if prompt.get('messages'):
+            for i, msg in enumerate(prompt.get('messages', []), 1):
+                self._print(f"  Message {i} role: {msg.get('role', 'N/A')}, content length: {len(msg.get('content', ''))} characters")
 
         # Step 5 — Generate response
         if not chunks:
             answer = Prompts.NO_ANSWER_MESSAGE
         else:
             answer = self.generate(prompt)
+        
+        self._print(f"  === DEBUG ===")
+        self._print(f"  After generate:")
+        self._print(f"  Generated answer length: {len(answer)} characters")
+        self._print(f"  Answer preview: {answer[:150]}...")
 
         # Extract source URLs from retrieved chunks
         sources = list({chunk["url"] for chunk in chunks})

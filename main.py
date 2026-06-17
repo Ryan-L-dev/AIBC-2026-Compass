@@ -14,7 +14,7 @@ import os
 
 from Source.Data_Scraper import DataScraper
 from Source.Vector_Database import VectorDatabase
-#from Source.Chat_Engine import ChatEngine
+from Source.Chat_Engine import ChatEngine
 
 def data_preprocessing():
     # Step 1 — Scrape website content
@@ -25,32 +25,32 @@ def data_preprocessing():
     vdb = VectorDatabase()
     vdb.process()
 
-# def chat_interface(vdb):
-#     # Step 3 — Chat (placeholder interactive loop)
-#     chat = ChatEngine(vdb)
+def chat_interface(vdb):
+    # Step 3 — Chat (placeholder interactive loop)
+    chat = ChatEngine(vdb)
 
-#     print("\nCPF Policy Assistant (type 'quit' to exit, 'reset' to clear history)")
-#     print("-" * 60)
+    print("\nCPF Policy Assistant (type 'quit' to exit, 'reset' to clear history)")
+    print("-" * 60)
 
-#     while True:
-#         query = input("\nYou: ").strip()
+    while True:
+        query = input("\nYou: ").strip()
 
-#         if not query:
-#             continue
-#         if query.lower() == "quit":
-#             break
-#         if query.lower() == "reset":
-#             chat.reset()
-#             print("  Chat history cleared.")
-#             continue
+        if not query:
+            continue
+        if query.lower() == "quit":
+            break
+        if query.lower() == "reset":
+            chat.reset()
+            print("  Chat history cleared.")
+            continue
 
-#         result = chat.ask(query)
-#         print(f"\nAssistant: {result['answer']}")
+        result = chat.ask(query)
+        print(f"\nAssistant: {result['answer']}")
 
-#         if result["sources"]:
-#             print("\n  Sources:")
-#             for url in result["sources"]:
-#                 print(f"    - {url}")
+        if result["sources"]:
+            print("\n  Sources:")
+            for url in result["sources"]:
+                print(f"    - {url}")
 
 def _expand_categories(prefixes):
     """Expand category prefixes into all matching paths from the categories list."""
@@ -98,8 +98,8 @@ def test_vector_db():
 
 def main():
     #data_preprocessing()
-    #chat_interface()
-    test_vector_db()
+    chat_interface(VectorDatabase())
+    #test_vector_db()
 
 if __name__ == "__main__":
     main()
