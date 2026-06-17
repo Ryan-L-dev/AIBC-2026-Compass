@@ -260,7 +260,12 @@ class VectorDatabase:
 
         if not to_embed:
             self._print("  No pages need embedding. Database is up to date.")
-            return
+            return {
+                "files_found": len(files),
+                "embedded": 0,
+                "skipped": len(files),
+                "purged": len(to_purge),
+            }
 
         self._print(f"  Pages to embed: {len(to_embed)}")
 
@@ -293,6 +298,13 @@ class VectorDatabase:
         self._print(f"\n  Pages embedded  : {embedded_count}")
         self._print(f"  Total chunks    : {total_chunks}")
         self._print(f"  Vectors in DB   : {self.vectorstore._collection.count()}")
+
+        return {
+            "files_found": len(files),
+            "embedded": embedded_count,
+            "skipped": len(files) - len(to_embed),
+            "purged": len(to_purge),
+        }
 
     # ==========================================================================
     # QUERY
