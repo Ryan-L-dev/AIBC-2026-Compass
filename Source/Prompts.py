@@ -21,6 +21,7 @@ class Prompts:
         "Category tree:\n{category_tree}\n\n"
         "Rules:\n"
         "- Return category paths exactly as they appear in the tree (e.g. 'healthcare financing/medishield life')\n"
+        "- Prefer the most specific matching path over a broad parent category\n"
         "- Use partial paths to match broader categories (e.g. 'healthcare financing' matches all sub-categories)\n"
         "- Return an empty list if the query spans all categories or you are unsure\n\n"
         "Respond ONLY with valid JSON in this format:\n"
