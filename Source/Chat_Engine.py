@@ -378,6 +378,7 @@ class ChatEngine:
         Appends to existing archive file with a timestamp.
         """
         archive_path = Constants.CHAT_HISTORY_FILE
+        os.makedirs(os.path.dirname(archive_path), exist_ok=True)
         archive_entry = {
             "archived_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "summary": self.history["summary"],

@@ -480,6 +480,7 @@ class DataScraper:
         during scraping, so this method simply writes the log and prints
         a summary including embedding statistics.
         """
+        os.makedirs(os.path.dirname(Constants.LOG_FILE), exist_ok=True)
         df = pd.DataFrame(self.log)
         df.to_csv(Constants.LOG_FILE, index=False)
 
