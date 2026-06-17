@@ -263,9 +263,12 @@ class DataScraper:
     # MAIN PROCESS
     # ==========================================================================
 
-    def process(self):
+    def process(self, progress_callback=None):
         """
         Execute the full scraping pipeline.
+
+        Args:
+            progress_callback: Optional callable(current, total) for progress updates.
 
         Steps:
             1. Read and parse the sitemap to discover URLs
@@ -286,7 +289,10 @@ class DataScraper:
         # Scrape each filtered URL
         # Note that the log will be used to store the metadata for each URL
         self.log = []
-        for url in tqdm(filtered_urls, desc="  Scraping", disable=not Constants.VERBOSE):
+        for i, url in enumerate(tqdm(filtered_urls, desc="  Scraping", disable=not Constants.VERBOSE)):
+
+            if progress_callback:
+                progress_callback(i + 1, len(filtered_urls))
 
             # Respect robots.txt
             if not self._is_allowed(url):

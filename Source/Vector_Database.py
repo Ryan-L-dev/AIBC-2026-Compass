@@ -227,9 +227,12 @@ class VectorDatabase:
     # MAIN PROCESS
     # ==========================================================================
 
-    def process(self):
+    def process(self, progress_callback=None):
         """
         Execute the full embedding pipeline.
+
+        Args:
+            progress_callback: Optional callable(current, total) for progress updates.
 
         Steps:
             1. Scan files and read their header metadata
@@ -264,7 +267,10 @@ class VectorDatabase:
         embedded_count = 0
         total_chunks = 0
 
-        for file_info in tqdm(to_embed, desc="  Embedding", disable=not Constants.VERBOSE):
+        for i, file_info in enumerate(tqdm(to_embed, desc="  Embedding", disable=not Constants.VERBOSE)):
+            if progress_callback:
+                progress_callback(i + 1, len(to_embed))
+
             text = self._load_content(file_info["filepath"])
 
             if not text.strip():
