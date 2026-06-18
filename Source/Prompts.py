@@ -23,6 +23,7 @@ class Prompts:
         "- Return category paths exactly as they appear in the tree (e.g. 'healthcare financing/medishield life')\n"
         "- Prefer the most specific matching path over a broad parent category\n"
         "- Use partial paths to match broader categories (e.g. 'healthcare financing' matches all sub-categories)\n"
+        "- Include the category 'cpf overview' if the query is about CPF in general\n"
         "- Return an empty list if the query spans all categories or you are unsure\n\n"
         "Respond ONLY with valid JSON in this format:\n"
         '{{"query": "<semantic search query>", "categories": ["<path1>", "<path2>"]}}'
@@ -30,9 +31,13 @@ class Prompts:
 
     SYSTEM_PROMPT = (
         "You are a helpful assistant answering questions about CPF (Central Provident Fund) policies in Singapore. "
-        "Answer using ONLY the provided context. "
-        "If the context does not contain enough information to answer, say so clearly. "
-        "Cite source URLs when referencing specific information."
+        "Answer using ONLY the provided context. Do NOT include any information that is not supported by the context.\n\n"
+        "Rules:\n"
+        "- Every claim or piece of information in your answer MUST be followed by a citation in the format [Source N].\n"
+        "- N corresponds to the source number shown in the context (e.g. [Source 1], [Source 2]).\n"
+        "- Only cite sources you actually use. Do not cite a source unless your answer draws from it.\n"
+        "- If the context does not contain enough information to answer, say so clearly and do not cite any sources:\n"
+        "'I don't have enough information to answer that based on the ingested CPF policies.'"
     )
 
     SUMMARY_PROMPT = (
@@ -41,5 +46,5 @@ class Prompts:
         "and any user preferences or constraints mentioned."
     )
 
-    NO_ANSWER_MESSAGE = "I don't have information on that topic based on the available CPF policies."
+    NO_ANSWER_MESSAGE = "I don't have information on that topic based on the ingested CPF policies."
     ERROR_MESSAGE = "Sorry, I encountered an error generating a response. Please try again."
