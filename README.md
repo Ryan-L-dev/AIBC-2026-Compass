@@ -59,7 +59,7 @@ OPENAI_API_KEY=sk-...   # Required for Chat Engine and production embeddings
 ### Web Interface (Primary)
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 This launches a two-tab Streamlit application:
