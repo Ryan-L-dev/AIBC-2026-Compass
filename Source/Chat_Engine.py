@@ -423,7 +423,7 @@ class ChatEngine:
         Returns:
             dict: Contains 'answer' (str) and 'sources' (list of URLs).
         """
-        self._print(f"\n  Query: {query}")
+        self._print(f"\n> Query: {query}")
 
         # Step 1 — Self-query: detect categories and refine query
         refined_query, categories = self.detect_categories(query)

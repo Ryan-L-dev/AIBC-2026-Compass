@@ -78,41 +78,39 @@ with tab_chat:
         st.rerun()
 
     # Display chat history
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if msg.get("sources"):
-                with st.expander("Sources"):
-                    for url in msg["sources"]:
-                        st.markdown(f"- [{url}]({url})")
-
-    # Chat input
-    if query := st.chat_input("Ask about CPF policies..."):
+    chat_history_container = st.container()
+    with chat_history_container:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg.get("sources"):
+                    with st.expander("Sources"):
+                        for url in msg["sources"]:
+                            st.markdown(f"- [{url}]({url})")
+    
+    # Chat input - always at the bottom
+    query = st.chat_input("Ask about CPF policies...")
+    
+    # Generate responses immediately when query is entered
+    if query:
         # Initialise chat engine on first use
         if st.session_state.chat_engine is None:
             from Source.Chat_Engine import ChatEngine
             st.session_state.chat_engine = ChatEngine(st.session_state.vdb)
 
-        # Show user message
+        # Show user message immediately
         st.session_state.messages.append({"role": "user", "content": query})
-        with st.chat_message("user"):
-            st.markdown(query)
-
+        
         # Generate response
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                result = st.session_state.chat_engine.ask(query)
-            st.markdown(result["answer"])
-            if result["sources"]:
-                with st.expander("Sources"):
-                    for url in result["sources"]:
-                        st.markdown(f"- [{url}]({url})")
-
+        result = st.session_state.chat_engine.ask(query)
+        
+        # Store response
         st.session_state.messages.append({
             "role": "assistant",
             "content": result["answer"],
             "sources": result["sources"],
         })
+        st.rerun()
 
 # ==========================================================================
 # TAB 2 — DATA MANAGEMENT

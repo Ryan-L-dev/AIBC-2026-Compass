@@ -119,7 +119,7 @@ class Constants:
     CHUNK_OVERLAP = 200
 
     # Embeddings
-    USE_LOCAL_EMBEDDINGS = True  # Set to False for OpenAI (production/Streamlit)
+    USE_LOCAL_EMBEDDINGS = False  # Set to False for OpenAI (production/Streamlit)
 
     # Query
     DEFAULT_TOP_K = 5
@@ -148,7 +148,7 @@ class Constants:
     CHAT_HISTORY_FILE = os.path.join("Data", "chat_history.json")
 
     # Retrieval
-    CONFIDENCE_THRESHOLD = 0.3
+    CONFIDENCE_THRESHOLD = 0.4  # Minimum similarity score for retrieved chunks to be included as context
 
     # LLM (OpenAI)
     LLM_MODEL_ID = "gpt-4o-mini"
