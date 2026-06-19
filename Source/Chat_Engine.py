@@ -478,7 +478,7 @@ class ChatEngine:
         # Post-process: only keep sources the LLM actually cited
         sources = []
         for i, chunk in enumerate(chunks, start=1):
-            if f"[Source {i}" in answer or chunk["url"] in answer:
+            if f"[Source {i}]" in answer or chunk["url"] in answer:
                 sources.append(chunk["url"])
         sources = list(dict.fromkeys(sources))  # deduplicate, preserve order
 
