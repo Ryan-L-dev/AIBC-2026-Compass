@@ -475,12 +475,17 @@ class ChatEngine:
         self._print(f"  Generated answer length: {len(answer)} characters")
         self._print(f"  Answer preview: {answer[:150]}...")
 
-        # Post-process: only keep sources the LLM actually cited
+        # Post-process: only keep sources the LLM actually cited and remove citation markers
         sources = []
         for i, chunk in enumerate(chunks, start=1):
             if f"[Source {i}]" in answer or chunk["url"] in answer:
                 sources.append(chunk["url"])
         sources = list(dict.fromkeys(sources))  # deduplicate, preserve order
+
+        # Remove citation markers from the answer text
+        for i in range(1, len(chunks) + 1):
+            answer = answer.replace(f"[Source {i}]", "").replace(f"[Source {i}:", "")
+        answer = answer.strip()
 
         # Step 6 — Update history
         self.update_history(query, answer, sources)
